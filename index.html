@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>あわわポモドーロ for ADHD</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', Meiryo, sans-serif;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100dvh;
+      padding: 24px 16px 32px;
+      color: #222;
+    }
+
+    .app-header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .app-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #222;
+    }
+
+    .app-subtitle {
+      font-size: 12px;
+      color: #999;
+      margin-top: 2px;
+      letter-spacing: 0.08em;
+    }
+
+    /* Timer circle */
+    .timer-wrapper {
+      position: relative;
+      width: 260px;
+      height: 260px;
+      margin-bottom: 28px;
+    }
+
+    .timer-svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .timer-bg-circle {
+      fill: none;
+      stroke: #f0f0f0;
+      stroke-width: 8;
+    }
+
+    .timer-progress-circle {
+      fill: none;
+      stroke-width: 8;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.5s linear, stroke 0.4s ease;
+    }
+
+    .timer-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .timer-display {
+      font-size: 52px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      color: #222;
+    }
+
+    .timer-status {
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 14px;
+      border-radius: 20px;
+      letter-spacing: 0.04em;
+      transition: background 0.4s, color 0.4s;
+    }
+
+    .status-standby   { background: #FFF0E0; color: #FF7A00; }
+    .status-idling    { background: #FFF0E0; color: #FF7A00; }
+    .status-choice    { background: #FFF0E0; color: #FF7A00; }
+    .status-working   { background: #FFF0E0; color: #FF7A00; }
+    .status-break     { background: #E8F4FD; color: #4EA8DE; }
+
+    /* Buttons row */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      margin-bottom: 20px;
+    }
+
+    .btn-main {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: none;
+      background: #FF7A00;
+      color: #fff;
+      font-size: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(255, 122, 0, 0.4);
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+
+    .btn-main:active {
+      transform: scale(0.92);
+      box-shadow: 0 2px 8px rgba(255, 122, 0, 0.3);
+    }
+
+    .btn-main.break-mode {
+      background: #4EA8DE;
+      box-shadow: 0 4px 16px rgba(78, 168, 222, 0.4);
+    }
+
+    .btn-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: #888;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: color 0.15s, transform 0.1s;
+    }
+
+    .btn-icon:hover { color: #444; }
+    .btn-icon:active { transform: scale(0.9); }
+    .btn-icon:disabled { opacity: 0.3; cursor: default; }
+
+    /* Description area */
+    .description-area {
+      width: 100%;
+      max-width: 320px;
+      min-height: 72px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      margin-bottom: 16px;
+      position: relative;
+    }
+
+    .description-text {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.7;
+    }
+
+    .icon-decoration {
+      position: absolute;
+      bottom: 0;
+      right: 4px;
+      font-size: 28px;
+      opacity: 0.65;
+    }
+
+    /* Choice buttons */
+    .choice-panel {
+      width: 100%;
+      max-width: 320px;
+      display: none;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .choice-panel.visible {
+      display: flex;
+    }
+
+    .btn-choice {
+      flex: 1;
+      border: none;
+      border-radius: 12px;
+      padding: 14px 10px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      transition: transform 0.1s, opacity 0.15s;
+    }
+
+    .btn-choice:active { transform: scale(0.97); }
+
+    .btn-choice.continue {
+      background: #FF7A00;
+      color: #fff;
+    }
+
+    .btn-choice.rest {
+      background: #FFF0E0;
+      color: #FF7A00;
+      border: 1.5px solid #FFD0A0;
+    }
+
+    .choice-icon {
+      font-size: 18px;
+    }
+
+    .choice-label {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .choice-desc {
+      font-size: 11px;
+      opacity: 0.85;
+      line-height: 1.4;
+    }
+
+    /* Pulsing ring for standby */
+    @keyframes pulse-ring {
+      0%   { opacity: 0.5; r: 112; }
+      50%  { opacity: 0.15; r: 118; }
+      100% { opacity: 0.5; r: 112; }
+    }
+
+    .pulse-circle {
+      fill: none;
+      stroke: #FF7A00;
+      stroke-width: 3;
+      opacity: 0;
+      animation: none;
+    }
+
+    .pulse-circle.active {
+      opacity: 0.4;
+      animation: pulse-ring 2.2s ease-in-out infinite;
+    }
+
+    /* Session stats */
+    .session-stats {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 12px;
+      color: #bbb;
+    }
+
+    .session-stats span {
+      color: #FF7A00;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="app-title">あわわポモドーロ</div>
+    <div class="app-subtitle">for ADHD</div>
+  </header>
+
+  <div class="timer-wrapper">
+    <svg class="timer-svg" viewBox="0 0 260 260">
+      <circle class="timer-bg-circle" cx="130" cy="130" r="112"/>
+      <circle class="pulse-circle" id="pulseCircle" cx="130" cy="130" r="112"/>
+      <circle class="timer-progress-circle" id="progressCircle"
+        cx="130" cy="130" r="112"
+        stroke="#FF7A00"
+        stroke-dasharray="703.7"
+        stroke-dashoffset="703.7"/>
+    </svg>
+    <div class="timer-center">
+      <div class="timer-display" id="timerDisplay">00:00</div>
+      <div class="timer-status status-standby" id="timerStatus">待機中...</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn-icon" id="btnReset" title="リセット" disabled>↺</button>
+    <button class="btn-main" id="btnMain" title="スタート">▶</button>
+    <button class="btn-icon" id="btnSkip" title="スキップ" disabled>›</button>
+  </div>
+
+  <div class="description-area">
+    <p class="description-text" id="descText">
+      あわわポモドーロはADHDの「先延ばし」を防止するADHD向け作業タイマーです！<br>
+      まずは上の再生ボタンを押して1分間だけのアイドリング作業を実施しましょう！<br>
+      1分だけ作業した後は休憩もできるのでまずは1分！
+    </p>
+    <div class="icon-decoration" id="iconDeco">🧑‍💻</div>
+  </div>
+
+  <div class="choice-panel" id="choicePanel">
+    <button class="btn-choice continue" id="btnContinue">
+      <span class="choice-icon">🧑‍💻</span>
+      <span class="choice-label">続行</span>
+      <span class="choice-desc">このまま作業を継続します</span>
+    </button>
+    <button class="btn-choice rest" id="btnRest">
+      <span class="choice-icon">☕</span>
+      <span class="choice-label">休憩</span>
+      <span class="choice-desc">1分の休憩を挟んで再度アイドリング作業を実施します</span>
+    </button>
+  </div>
+
+  <div class="session-stats" id="sessionStats" style="display:none">
+    本日の作業時間: <span id="totalWorkDisplay">0分</span>
+  </div>
+
+  <script>
+    // ── Constants ──────────────────────────────────────────────
+    const IDLING_SEC  = 60;   // 1 minute idling
+    const BREAK_SEC   = 60;   // 1 minute break
+    const CIRCUMFERENCE = 2 * Math.PI * 112; // ≈ 703.7
+
+    // ── State ──────────────────────────────────────────────────
+    let phase = 'standby'; // standby | idling | choice | working | break
+    let elapsed = 0;       // seconds in current phase
+    let workTotal = 0;     // cumulative work seconds (idling + working)
+    let isPaused = false;
+    let tickInterval = null;
+
+    // ── DOM refs ───────────────────────────────────────────────
+    const timerDisplay  = document.getElementById('timerDisplay');
+    const timerStatus   = document.getElementById('timerStatus');
+    const progressCircle= document.getElementById('progressCircle');
+    const pulseCircle   = document.getElementById('pulseCircle');
+    const btnMain       = document.getElementById('btnMain');
+    const btnReset      = document.getElementById('btnReset');
+    const btnSkip       = document.getElementById('btnSkip');
+    const descText      = document.getElementById('descText');
+    const iconDeco      = document.getElementById('iconDeco');
+    const choicePanel   = document.getElementById('choicePanel');
+    const btnContinue   = document.getElementById('btnContinue');
+    const btnRest       = document.getElementById('btnRest');
+    const sessionStats  = document.getElementById('sessionStats');
+    const totalWorkDisplay = document.getElementById('totalWorkDisplay');
+
+    // ── Helpers ────────────────────────────────────────────────
+    function pad(n) { return String(n).padStart(2, '0'); }
+
+    function formatTime(secs) {
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      return `${pad(m)}:${pad(s)}`;
+    }
+
+    function setProgress(ratio, color) {
+      const offset = CIRCUMFERENCE * (1 - Math.max(0, Math.min(1, ratio)));
+      progressCircle.style.strokeDashoffset = offset;
+      progressCircle.style.stroke = color;
+    }
+
+    function clearTick() {
+      if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+    }
+
+    // ── Render ─────────────────────────────────────────────────
+    function render() {
+      choicePanel.classList.remove('visible');
+
+      // Pulse ring for standby
+      pulseCircle.classList.toggle('active', phase === 'standby');
+
+      switch (phase) {
+
+        case 'standby':
+          timerDisplay.textContent = '00:00';
+          setProgress(0, '#FF7A00');
+          setStatus('待機中...', 'status-standby');
+          btnMain.innerHTML = '▶';
+          btnMain.classList.remove('break-mode');
+          btnReset.disabled = true;
+          btnSkip.disabled  = true;
+          descText.innerHTML = 'あわわポモドーロはADHDの「先延ばし」を防止するADHD向け作業タイマーです！<br>まずは上の再生ボタンを押して1分間だけのアイドリング作業を実施しましょう！<br>1分だけ作業した後は休憩もできるのでまずは1分！';
+          iconDeco.textContent = '🧑‍💻';
+          break;
+
+        case 'idling':
+          timerDisplay.textContent = formatTime(workTotal);
+          setProgress(elapsed / IDLING_SEC, '#FF7A00');
+          setStatus('アイドリング中...', 'status-idling');
+          btnMain.innerHTML = isPaused ? '▶' : '⏸';
+          btnMain.classList.remove('break-mode');
+          btnReset.disabled = false;
+          btnSkip.disabled  = true;
+          descText.innerHTML = 'アイドリング作業中！まず1分だけ頑張りましょう。<br>1分たったら続行か休憩かを選べます。';
+          iconDeco.textContent = '🧑‍💻';
+          break;
+
+        case 'choice':
+          timerDisplay.textContent = formatTime(workTotal);
+          setProgress(1, '#FF7A00');
+          setStatus('アイドリング中...', 'status-choice');
+          btnMain.innerHTML = '▶';
+          btnMain.classList.remove('break-mode');
+          btnReset.disabled = false;
+          btnSkip.disabled  = true;
+          descText.innerHTML = 'アイドリング作業が終了しました。<br>このまま作業を継続するか一度休憩するかを選んでください。';
+          iconDeco.textContent = '';
+          choicePanel.classList.add('visible');
+          break;
+
+        case 'working':
+          timerDisplay.textContent = formatTime(workTotal);
+          setProgress(1, '#FF7A00');
+          setStatus('作業中', 'status-working');
+          btnMain.innerHTML = isPaused ? '▶' : '⏸';
+          btnMain.classList.remove('break-mode');
+          btnReset.disabled = false;
+          btnSkip.disabled  = false;
+          descText.innerHTML = 'ナイス継続です！この調子で気の向くまで存分に作業を実施しましょう。<br>中央のスキップボタンを押すと休憩に入ることができます。';
+          iconDeco.textContent = '🧑‍💻';
+          break;
+
+        case 'break':
+          const remaining = Math.max(0, BREAK_SEC - elapsed);
+          timerDisplay.textContent = formatTime(remaining);
+          setProgress(remaining / BREAK_SEC, '#4EA8DE');
+          setStatus('アイドリング休憩', 'status-break');
+          btnMain.innerHTML = isPaused ? '▶' : '⏸';
+          btnMain.classList.add('break-mode');
+          btnReset.disabled = false;
+          btnSkip.disabled  = false;
+          descText.innerHTML = '1分の休憩を取りましょう。<br>休憩終了後に再度1分間のアイドリング作業を行います。';
+          iconDeco.textContent = '☕';
+          break;
+      }
+
+      // Session stats
+      if (workTotal > 0) {
+        sessionStats.style.display = 'block';
+        const mins = Math.floor(workTotal / 60);
+        const secs = workTotal % 60;
+        totalWorkDisplay.textContent = mins > 0 ? `${mins}分${secs}秒` : `${secs}秒`;
+      }
+    }
+
+    function setStatus(text, cls) {
+      timerStatus.textContent = text;
+      timerStatus.className = 'timer-status ' + cls;
+    }
+
+    // ── Transitions ────────────────────────────────────────────
+    function startIdling() {
+      clearTick();
+      phase = 'idling';
+      elapsed = 0;
+      isPaused = false;
+      tickInterval = setInterval(tick, 1000);
+      render();
+    }
+
+    function startWorking() {
+      clearTick();
+      phase = 'working';
+      elapsed = 0;
+      isPaused = false;
+      tickInterval = setInterval(tick, 1000);
+      render();
+    }
+
+    function startBreak() {
+      clearTick();
+      phase = 'break';
+      elapsed = 0;
+      isPaused = false;
+      tickInterval = setInterval(tick, 1000);
+      render();
+    }
+
+    function showChoice() {
+      clearTick();
+      phase = 'choice';
+      isPaused = false;
+      render();
+    }
+
+    function reset() {
+      clearTick();
+      phase = 'standby';
+      elapsed = 0;
+      workTotal = 0;
+      isPaused = false;
+      render();
+      sessionStats.style.display = 'none';
+    }
+
+    // ── Tick ───────────────────────────────────────────────────
+    function tick() {
+      if (isPaused) return;
+      elapsed++;
+
+      if (phase === 'idling') {
+        workTotal++;
+        if (elapsed >= IDLING_SEC) {
+          showChoice();
+          return;
+        }
+      } else if (phase === 'working') {
+        workTotal++;
+      } else if (phase === 'break') {
+        if (elapsed >= BREAK_SEC) {
+          startIdling();
+          return;
+        }
+      }
+
+      render();
+    }
+
+    // ── Button handlers ────────────────────────────────────────
+    btnMain.addEventListener('click', () => {
+      if (phase === 'standby') {
+        startIdling();
+        return;
+      }
+      if (phase === 'choice') {
+        // Play from choice = same as 続行
+        startWorking();
+        return;
+      }
+      // Toggle pause
+      isPaused = !isPaused;
+      if (!isPaused) {
+        clearTick();
+        tickInterval = setInterval(tick, 1000);
+      }
+      render();
+    });
+
+    btnSkip.addEventListener('click', () => {
+      if (phase === 'working') {
+        startBreak();
+      } else if (phase === 'break') {
+        startIdling();
+      }
+    });
+
+    btnReset.addEventListener('click', () => {
+      reset();
+    });
+
+    btnContinue.addEventListener('click', () => {
+      startWorking();
+    });
+
+    btnRest.addEventListener('click', () => {
+      startBreak();
+    });
+
+    // ── Init ───────────────────────────────────────────────────
+    render();
+  </script>
+</body>
+</html>
