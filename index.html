@@ -392,10 +392,8 @@
       white-space: nowrap;
     }
 
-    .news-source.court  { background: #4EA8DE; }
-    .news-source.bengo  { background: #6C5CE7; }
 
-    .news-time {
+.news-time {
       font-size: 11px;
       color: #bbb;
     }
@@ -788,11 +786,7 @@
     });
 
     // ── News ────────────────────────────────────────────────────
-    const FEEDS = [
-      { url: 'https://www.nhk.or.jp/rss/news/cat1.xml',  name: 'NHK',        cls: 'nhk'   },
-      { url: 'https://www.courts.go.jp/rss/index.xml',   name: '裁判所',      cls: 'court' },
-      { url: 'https://www.bengo4.com/rss/',              name: '弁護士ドットコム', cls: 'bengo' },
-    ];
+    const NHK_RSS = 'https://www.nhk.or.jp/rss/news/cat1.xml';
     const NEWS_INTERVAL = 300 * 1000; // 5 minutes
     let newsLoaded = false;
     let newsRefreshTimer = null;
@@ -811,76 +805,25 @@
       return `${Math.floor(diff / 86400)}日前`;
     }
 
-    // allorigins.win: raw CORS proxy → parse XML ourselves
-    async function fetchViaRss2json(feed) {
-      const res = await fetch('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(feed.url));
-      const data = await res.json();
-      if (data.status !== 'ok' || !data.items?.length) throw new Error('rss2json failed');
-      return data.items.map(item => ({
-        title: item.title, link: item.link, pubDate: item.pubDate,
-        source: feed.name, cls: feed.cls,
-      }));
-    }
-
-    async function fetchViaXmlProxy(feed, base) {
-      const res = await fetch(base + encodeURIComponent(feed.url));
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      const xml = new DOMParser().parseFromString(text, 'application/xml');
-      const nodes = [...xml.querySelectorAll('item, entry')];
-      if (!nodes.length) throw new Error('no items');
-      return nodes.slice(0, 20).map(node => {
-        const t = tag => node.querySelector(tag)?.textContent?.trim() || '';
-        const linkEl = node.querySelector('link');
-        const link = linkEl?.getAttribute('href') || linkEl?.textContent?.trim() || t('guid');
-        return {
-          title: t('title'), link,
-          pubDate: t('pubDate') || t('updated') || t('published') || '',
-          source: feed.name, cls: feed.cls,
-        };
-      });
-    }
-
-    async function fetchFeed(feed) {
-      const strategies = [
-        () => fetchViaRss2json(feed),
-        () => fetchViaXmlProxy(feed, 'https://api.allorigins.win/raw?url='),
-        () => fetchViaXmlProxy(feed, 'https://corsproxy.io/?'),
-      ];
-      for (const attempt of strategies) {
-        try {
-          const items = await attempt();
-          if (items.length > 0) return items;
-        } catch { /* try next */ }
-      }
-      return [];
-    }
-
     async function fetchNews() {
       const list = document.getElementById('newsList');
       list.innerHTML = '<div class="news-loading">読み込み中...</div>';
       clearTimeout(newsRefreshTimer);
 
       try {
-        const results = await Promise.allSettled(FEEDS.map(fetchFeed));
-        const items = results
-          .flatMap(r => r.status === 'fulfilled' ? r.value : [])
-          .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
-          .slice(0, 40);
+        const res = await fetch('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(NHK_RSS));
+        const data = await res.json();
+        if (data.status !== 'ok' || !data.items?.length) throw new Error('fetch failed');
 
-        if (items.length === 0) {
-          list.innerHTML = '<div class="news-loading">記事を取得できませんでした</div>';
-        } else {
-          list.innerHTML = items.map(item => `
-            <a class="news-item" href="${escapeHtml(item.link)}" target="_blank" rel="noopener noreferrer">
-              <div class="news-meta">
-                <span class="news-source ${item.cls}">${escapeHtml(item.source)}</span>
-                <span class="news-time">${relativeTime(item.pubDate)}</span>
-              </div>
-              <div class="news-title">${escapeHtml(item.title)}</div>
-            </a>`).join('');
-          newsLoaded = true;
-        }
+        list.innerHTML = data.items.slice(0, 40).map(item => `
+          <a class="news-item" href="${escapeHtml(item.link)}" target="_blank" rel="noopener noreferrer">
+            <div class="news-meta">
+              <span class="news-source">NHK</span>
+              <span class="news-time">${relativeTime(item.pubDate)}</span>
+            </div>
+            <div class="news-title">${escapeHtml(item.title)}</div>
+          </a>`).join('');
+        newsLoaded = true;
 
         const now = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
         document.getElementById('newsLastUpdate').textContent = `更新 ${now}`;
