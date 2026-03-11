@@ -278,6 +278,32 @@
       font-weight: 600;
     }
 
+    /* ── History link ─────────────────────────────────────────── */
+    .history-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 320px;
+      padding: 11px 16px;
+      text-decoration: none;
+      color: #FF7A00;
+      font-size: 13px;
+      font-weight: 600;
+      background: #FFF7F0;
+      border-radius: 10px;
+      border: 1px solid #FFE0C0;
+      margin-top: 12px;
+      transition: opacity 0.15s;
+    }
+
+    .history-link:active { opacity: 0.65; }
+
+    .history-link-arrow {
+      font-size: 16px;
+      opacity: 0.6;
+    }
+
     /* ── Tab bar ──────────────────────────────────────────────── */
     .tab-bar {
       width: 100%;
@@ -438,6 +464,11 @@
       <span class="choice-desc">好きなだけ休憩してから再度アイドリング作業を実施します</span>
     </button>
   </div>
+
+  <a href="/history.html" class="history-link">
+    <span>📊 今までの記録</span>
+    <span class="history-link-arrow">›</span>
+  </a>
 
   <nav class="tab-bar">
     <button class="tab-btn active" id="tabTimer" data-tab="timer">⏱ タイマー</button>
@@ -608,6 +639,14 @@
       timerStatus.className = 'timer-status ' + cls;
     }
 
+    // ── History storage ─────────────────────────────────────────
+    function saveHistory() {
+      const today = new Date().toLocaleDateString('sv'); // YYYY-MM-DD
+      const hist = JSON.parse(localStorage.getItem('adhd-history') || '{}');
+      hist[today] = workTotal;
+      localStorage.setItem('adhd-history', JSON.stringify(hist));
+    }
+
     // ── Sound effects ───────────────────────────────────────────
     function playCoinSound() {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -687,12 +726,14 @@
 
       if (phase === 'idling') {
         workTotal++;
+        saveHistory();
         if (elapsed >= IDLING_SEC) {
           showChoice();
           return;
         }
       } else if (phase === 'working') {
         workTotal++;
+        saveHistory();
       } else if (phase === 'break') {
         // 無制限休憩 - スキップボタンで終了
       }
