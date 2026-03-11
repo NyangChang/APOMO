@@ -277,6 +277,115 @@
       color: #FF7A00;
       font-weight: 600;
     }
+
+    /* ── Tab bar ──────────────────────────────────────────────── */
+    .tab-bar {
+      width: 100%;
+      max-width: 320px;
+      display: flex;
+      border-bottom: 2px solid #f0f0f0;
+      margin-top: 20px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 10px 0;
+      background: none;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      color: #bbb;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      letter-spacing: 0.04em;
+      transition: color 0.2s, border-color 0.2s;
+    }
+
+    .tab-btn.active {
+      color: #FF7A00;
+      border-bottom-color: #FF7A00;
+    }
+
+    .tab-panel {
+      display: none;
+      width: 100%;
+      max-width: 320px;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    /* ── News ─────────────────────────────────────────────────── */
+    .news-header {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 0 4px;
+      font-size: 11px;
+      color: #ccc;
+    }
+
+    .news-header button {
+      background: none;
+      border: none;
+      color: #FF7A00;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+    }
+
+    .news-item {
+      display: block;
+      padding: 11px 0;
+      border-bottom: 1px solid #f5f5f5;
+      text-decoration: none;
+      color: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .news-item:active { opacity: 0.55; }
+
+    .news-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 5px;
+    }
+
+    .news-source {
+      font-size: 10px;
+      font-weight: 700;
+      color: #fff;
+      background: #FF7A00;
+      padding: 2px 8px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
+
+    .news-source.court  { background: #4EA8DE; }
+    .news-source.bengo  { background: #6C5CE7; }
+
+    .news-time {
+      font-size: 11px;
+      color: #bbb;
+    }
+
+    .news-title {
+      font-size: 13px;
+      line-height: 1.55;
+      color: #222;
+    }
+
+    .news-loading {
+      text-align: center;
+      font-size: 13px;
+      color: #bbb;
+      padding: 28px 0;
+    }
   </style>
 </head>
 <body>
@@ -330,8 +439,25 @@
     </button>
   </div>
 
-  <div class="session-stats" id="sessionStats" style="display:none">
-    本日の作業時間: <span id="totalWorkDisplay">0分</span>
+  <nav class="tab-bar">
+    <button class="tab-btn active" id="tabTimer" data-tab="timer">⏱ タイマー</button>
+    <button class="tab-btn" id="tabNews" data-tab="news">📰 ニュース</button>
+  </nav>
+
+  <div class="tab-panel active" data-panel="timer">
+    <div class="session-stats" id="sessionStats" style="display:none">
+      本日の作業時間: <span id="totalWorkDisplay">0分</span>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-panel="news">
+    <div class="news-header">
+      <span id="newsLastUpdate"></span>
+      <button id="btnNewsRefresh" title="更新">↺</button>
+    </div>
+    <div id="newsList">
+      <div class="news-loading">ニュースタブを開くと読み込みます</div>
+    </div>
   </div>
 
   <script>
@@ -619,6 +745,92 @@
     btnRest.addEventListener('click', () => {
       startBreak();
     });
+
+    // ── News ────────────────────────────────────────────────────
+    const FEEDS = [
+      { url: 'https://www.nhk.or.jp/rss/news/cat1.xml',  name: 'NHK',        cls: 'nhk'   },
+      { url: 'https://www.courts.go.jp/rss/index.xml',   name: '裁判所',      cls: 'court' },
+      { url: 'https://www.bengo4.com/rss/',              name: '弁護士ドットコム', cls: 'bengo' },
+    ];
+    const RSS_PROXY = 'https://api.rss2json.com/v1/api.json?rss_url=';
+    const NEWS_INTERVAL = 300 * 1000; // 5 minutes
+    let newsLoaded = false;
+    let newsRefreshTimer = null;
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function relativeTime(dateStr) {
+      const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+      if (diff < 60)    return 'たった今';
+      if (diff < 3600)  return `${Math.floor(diff / 60)}分前`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}時間前`;
+      return `${Math.floor(diff / 86400)}日前`;
+    }
+
+    async function fetchFeed(feed) {
+      const res = await fetch(RSS_PROXY + encodeURIComponent(feed.url));
+      const data = await res.json();
+      if (data.status !== 'ok') return [];
+      return data.items.map(item => ({
+        title: item.title,
+        link:  item.link,
+        pubDate: item.pubDate,
+        source: feed.name,
+        cls:    feed.cls,
+      }));
+    }
+
+    async function fetchNews() {
+      const list = document.getElementById('newsList');
+      list.innerHTML = '<div class="news-loading">読み込み中...</div>';
+      clearTimeout(newsRefreshTimer);
+
+      try {
+        const results = await Promise.allSettled(FEEDS.map(fetchFeed));
+        const items = results
+          .flatMap(r => r.status === 'fulfilled' ? r.value : [])
+          .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
+          .slice(0, 40);
+
+        if (items.length === 0) {
+          list.innerHTML = '<div class="news-loading">記事を取得できませんでした</div>';
+        } else {
+          list.innerHTML = items.map(item => `
+            <a class="news-item" href="${escapeHtml(item.link)}" target="_blank" rel="noopener noreferrer">
+              <div class="news-meta">
+                <span class="news-source ${item.cls}">${escapeHtml(item.source)}</span>
+                <span class="news-time">${relativeTime(item.pubDate)}</span>
+              </div>
+              <div class="news-title">${escapeHtml(item.title)}</div>
+            </a>`).join('');
+          newsLoaded = true;
+        }
+
+        const now = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+        document.getElementById('newsLastUpdate').textContent = `更新 ${now}`;
+      } catch {
+        list.innerHTML = '<div class="news-loading">取得エラー — ↺ で再試行</div>';
+      }
+
+      newsRefreshTimer = setTimeout(fetchNews, NEWS_INTERVAL);
+    }
+
+    // ── Tab switching ───────────────────────────────────────────
+    function switchTab(name) {
+      document.querySelectorAll('.tab-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.tab === name));
+      document.querySelectorAll('.tab-panel').forEach(p =>
+        p.classList.toggle('active', p.dataset.panel === name));
+      if (name === 'news' && !newsLoaded) fetchNews();
+    }
+
+    document.getElementById('tabTimer').addEventListener('click', () => switchTab('timer'));
+    document.getElementById('tabNews').addEventListener('click',  () => switchTab('news'));
+    document.getElementById('btnNewsRefresh').addEventListener('click', fetchNews);
 
     // ── Animation loop (smooth circle) ─────────────────────────
     function animationLoop() {
