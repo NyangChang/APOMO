@@ -74,7 +74,7 @@
       fill: none;
       stroke-width: 8;
       stroke-linecap: round;
-      transition: stroke-dashoffset 0.5s linear, stroke 0.4s ease;
+      transition: stroke 0.4s ease;
     }
 
     .timer-center {
@@ -304,8 +304,8 @@
 
   <div class="controls">
     <button class="btn-icon" id="btnReset" title="リセット" disabled>↺</button>
-    <button class="btn-main" id="btnMain" title="スタート">▶</button>
     <button class="btn-icon" id="btnSkip" title="スキップ" disabled>›</button>
+    <button class="btn-main" id="btnMain" title="スタート">▶</button>
   </div>
 
   <div class="description-area">
@@ -326,7 +326,7 @@
     <button class="btn-choice rest" id="btnRest">
       <span class="choice-icon">☕</span>
       <span class="choice-label">休憩</span>
-      <span class="choice-desc">1分の休憩を挟んで再度アイドリング作業を実施します</span>
+      <span class="choice-desc">好きなだけ休憩してから再度アイドリング作業を実施します</span>
     </button>
   </div>
 
@@ -336,8 +336,7 @@
 
   <script>
     // ── Constants ──────────────────────────────────────────────
-    const IDLING_SEC  = 60;   // 1 minute idling
-    const BREAK_SEC   = 60;   // 1 minute break
+    const IDLING_SEC    = 60;   // 1 minute idling
     const CIRCUMFERENCE = 2 * Math.PI * 112; // ≈ 703.7
 
     // ── State ──────────────────────────────────────────────────
@@ -346,6 +345,9 @@
     let workTotal = 0;     // cumulative work seconds (idling + working)
     let isPaused = false;
     let tickInterval = null;
+    let phaseStartTime = null;  // performance.now() when phase started
+    let pausedAccum = 0;        // total paused ms in current phase
+    let pauseStartTime = null;  // performance.now() when paused
 
     // ── DOM refs ───────────────────────────────────────────────
     const timerDisplay  = document.getElementById('timerDisplay');
@@ -380,6 +382,19 @@
 
     function clearTick() {
       if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+    }
+
+    function getSmoothedElapsed() {
+      if (phaseStartTime === null) return elapsed;
+      const now = performance.now();
+      const paused = pausedAccum + (isPaused && pauseStartTime !== null ? now - pauseStartTime : 0);
+      return (now - phaseStartTime - paused) / 1000;
+    }
+
+    function markPhaseStart() {
+      phaseStartTime = performance.now();
+      pausedAccum = 0;
+      pauseStartTime = null;
     }
 
     // ── Render ─────────────────────────────────────────────────
@@ -441,15 +456,14 @@
           break;
 
         case 'break':
-          const remaining = Math.max(0, BREAK_SEC - elapsed);
-          timerDisplay.textContent = formatTime(remaining);
-          setProgress(remaining / BREAK_SEC, '#4EA8DE');
-          setStatus('アイドリング休憩', 'status-break');
+          timerDisplay.textContent = formatTime(elapsed);
+          setProgress(1, '#4EA8DE');
+          setStatus('休憩中', 'status-break');
           btnMain.innerHTML = isPaused ? '▶' : '⏸';
           btnMain.classList.add('break-mode');
           btnReset.disabled = false;
           btnSkip.disabled  = false;
-          descText.innerHTML = '1分の休憩を取りましょう。<br>休憩終了後に再度1分間のアイドリング作業を行います。';
+          descText.innerHTML = 'ゆっくり休憩しましょう。時間制限はありません。<br>準備できたらスキップで次のアイドリング作業へ。';
           iconDeco.textContent = '☕';
           break;
       }
@@ -474,6 +488,7 @@
       phase = 'idling';
       elapsed = 0;
       isPaused = false;
+      markPhaseStart();
       tickInterval = setInterval(tick, 1000);
       render();
     }
@@ -483,6 +498,7 @@
       phase = 'working';
       elapsed = 0;
       isPaused = false;
+      markPhaseStart();
       tickInterval = setInterval(tick, 1000);
       render();
     }
@@ -492,6 +508,7 @@
       phase = 'break';
       elapsed = 0;
       isPaused = false;
+      markPhaseStart();
       tickInterval = setInterval(tick, 1000);
       render();
     }
@@ -509,6 +526,9 @@
       elapsed = 0;
       workTotal = 0;
       isPaused = false;
+      phaseStartTime = null;
+      pausedAccum = 0;
+      pauseStartTime = null;
       render();
       sessionStats.style.display = 'none';
     }
@@ -527,10 +547,7 @@
       } else if (phase === 'working') {
         workTotal++;
       } else if (phase === 'break') {
-        if (elapsed >= BREAK_SEC) {
-          startIdling();
-          return;
-        }
+        // 無制限休憩 - スキップボタンで終了
       }
 
       render();
@@ -549,7 +566,13 @@
       }
       // Toggle pause
       isPaused = !isPaused;
-      if (!isPaused) {
+      if (isPaused) {
+        pauseStartTime = performance.now();
+      } else {
+        if (pauseStartTime !== null) {
+          pausedAccum += performance.now() - pauseStartTime;
+          pauseStartTime = null;
+        }
         clearTick();
         tickInterval = setInterval(tick, 1000);
       }
@@ -575,6 +598,17 @@
     btnRest.addEventListener('click', () => {
       startBreak();
     });
+
+    // ── Animation loop (smooth circle) ─────────────────────────
+    function animationLoop() {
+      if (phase === 'idling' && phaseStartTime !== null) {
+        const smooth = getSmoothedElapsed();
+        const offset = CIRCUMFERENCE * (1 - Math.min(1, smooth / IDLING_SEC));
+        progressCircle.style.strokeDashoffset = offset;
+      }
+      requestAnimationFrame(animationLoop);
+    }
+    requestAnimationFrame(animationLoop);
 
     // ── Init ───────────────────────────────────────────────────
     render();
