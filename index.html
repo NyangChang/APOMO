@@ -812,22 +812,48 @@
     }
 
     // allorigins.win: raw CORS proxy → parse XML ourselves
-    async function fetchFeed(feed) {
-      const url = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(feed.url);
-      const res = await fetch(url);
+    async function fetchViaRss2json(feed) {
+      const res = await fetch('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(feed.url));
+      const data = await res.json();
+      if (data.status !== 'ok' || !data.items?.length) throw new Error('rss2json failed');
+      return data.items.map(item => ({
+        title: item.title, link: item.link, pubDate: item.pubDate,
+        source: feed.name, cls: feed.cls,
+      }));
+    }
+
+    async function fetchViaXmlProxy(feed, base) {
+      const res = await fetch(base + encodeURIComponent(feed.url));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
       const xml = new DOMParser().parseFromString(text, 'application/xml');
-      // RSS 2.0 uses <item>, Atom uses <entry>
       const nodes = [...xml.querySelectorAll('item, entry')];
+      if (!nodes.length) throw new Error('no items');
       return nodes.slice(0, 20).map(node => {
         const t = tag => node.querySelector(tag)?.textContent?.trim() || '';
-        // <link> in Atom may be an empty element with href attribute
         const linkEl = node.querySelector('link');
         const link = linkEl?.getAttribute('href') || linkEl?.textContent?.trim() || t('guid');
-        const pubDate = t('pubDate') || t('updated') || t('published') || '';
-        return { title: t('title'), link, pubDate, source: feed.name, cls: feed.cls };
+        return {
+          title: t('title'), link,
+          pubDate: t('pubDate') || t('updated') || t('published') || '',
+          source: feed.name, cls: feed.cls,
+        };
       });
+    }
+
+    async function fetchFeed(feed) {
+      const strategies = [
+        () => fetchViaRss2json(feed),
+        () => fetchViaXmlProxy(feed, 'https://api.allorigins.win/raw?url='),
+        () => fetchViaXmlProxy(feed, 'https://corsproxy.io/?'),
+      ];
+      for (const attempt of strategies) {
+        try {
+          const items = await attempt();
+          if (items.length > 0) return items;
+        } catch { /* try next */ }
+      }
+      return [];
     }
 
     async function fetchNews() {
