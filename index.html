@@ -77,14 +77,13 @@
       transition: stroke 0.4s ease;
     }
 
-    .timer-center {
-      position: absolute;
-      inset: 0;
+    /* Timer header (above ring) */
+    .timer-header {
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      gap: 8px;
+      gap: 6px;
+      margin-bottom: 12px;
     }
 
     .timer-display {
@@ -104,6 +103,27 @@
       letter-spacing: 0.04em;
       transition: background 0.4s, color 0.4s;
     }
+
+    /* Ring interior = しんどいボタン */
+    .timer-center {
+      position: absolute;
+      inset: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border-radius: 50%;
+      cursor: pointer;
+      background: transparent;
+      transition: transform 0.1s, background 0.25s;
+      -webkit-tap-highlight-color: transparent;
+      overflow: hidden;
+    }
+
+    .timer-center:active { transform: scale(0.93); }
+    .timer-center .shindoi-emoji { font-size: 52px; line-height: 1; }
+    .timer-center .shindoi-label { font-size: 14px; font-weight: 700; color: #D04040; letter-spacing: 0.05em; }
 
     .status-standby   { background: #FFF0E0; color: #FF7A00; }
     .status-idling    { background: #FFF0E0; color: #FF7A00; }
@@ -415,39 +435,10 @@
     .shindoi-section {
       width: 100%;
       max-width: 320px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 22px;
+      margin-bottom: 14px;
     }
-
-    .btn-shindoi {
-      flex-shrink: 0;
-      width: 68px;
-      height: 68px;
-      border-radius: 50%;
-      border: 1.5px solid #FFCCCC;
-      background: #FFF0F0;
-      color: #D04040;
-      font-size: 11px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: transform 0.1s, background 0.15s;
-      -webkit-tap-highlight-color: transparent;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 3px;
-      line-height: 1;
-    }
-
-    .btn-shindoi .shindoi-emoji { font-size: 24px; line-height: 1; }
-
-    .btn-shindoi:active { transform: scale(0.90); background: #FFE0E0; }
 
     .shindoi-gauge-wrap {
-      flex: 1;
       display: flex;
       flex-direction: column;
       gap: 5px;
@@ -526,6 +517,7 @@
     <div class="app-title">ADHDポモドーロ</div>
   </header>
 
+  <!-- しんどいゲージ（ボタンはリング内側へ移動） -->
   <div class="shindoi-section">
     <div class="shindoi-gauge-wrap" id="shindoiGaugeWrap">
       <div class="shindoi-gauge-bg">
@@ -536,12 +528,15 @@
         <span class="shindoi-explosion-badge" id="shindoiExplosionBadge" style="display:none">💥 <span id="shindoiExplosionCount">0</span>回</span>
       </div>
     </div>
-    <button class="btn-shindoi" id="btnShindoi">
-      <span class="shindoi-emoji">😣</span>
-      <span>しんどい</span>
-    </button>
   </div>
 
+  <!-- 時間表示・ステータス（わっかの上） -->
+  <div class="timer-header">
+    <div class="timer-display" id="timerDisplay">00:00</div>
+    <div class="timer-status status-standby" id="timerStatus">待機中...</div>
+  </div>
+
+  <!-- タイマーわっか（内側 = しんどいボタン） -->
   <div class="timer-wrapper">
     <svg class="timer-svg" viewBox="0 0 260 260">
       <circle class="timer-bg-circle" cx="130" cy="130" r="112"/>
@@ -552,9 +547,9 @@
         stroke-dasharray="703.7"
         stroke-dashoffset="703.7"/>
     </svg>
-    <div class="timer-center">
-      <div class="timer-display" id="timerDisplay">00:00</div>
-      <div class="timer-status status-standby" id="timerStatus">待機中...</div>
+    <div class="timer-center" id="btnShindoi">
+      <span class="shindoi-emoji">😣</span>
+      <span class="shindoi-label">しんどい</span>
     </div>
   </div>
 
@@ -867,9 +862,23 @@
     function updateShindoiUI() {
       const display = Math.min(shindoiCount, SHINDOI_MAX);
       const pct = (display / SHINDOI_MAX) * 100;
-      shindoiGaugeFill.style.width    = pct + '%';
+      shindoiGaugeFill.style.width      = pct + '%';
       shindoiGaugeFill.style.background = getGaugeColor(shindoiCount);
-      shindoiCountText.textContent    = shindoiCount > 0 ? `${display} / ${SHINDOI_MAX}` : '';
+      shindoiCountText.textContent      = shindoiCount > 0 ? `${display} / ${SHINDOI_MAX}` : '';
+
+      // リング内側の背景色をしんどいレベルで変化させる
+      if (shindoiCount > 0) {
+        const color = getGaugeColor(shindoiCount); // "rgb(R,G,B)"
+        const alpha = Math.min(shindoiCount / SHINDOI_MAX, 1) * 0.18;
+        btnShindoi.style.background = color.replace('rgb(', 'rgba(').replace(')', `,${alpha.toFixed(2)})`);
+      } else {
+        btnShindoi.style.background = 'transparent';
+      }
+
+      // 絵文字をレベルに応じて変化
+      const ratio = pct / 100;
+      const emoji = ratio < 0.25 ? '😣' : ratio < 0.5 ? '😰' : ratio < 0.75 ? '😤' : ratio < 1 ? '🤯' : '💥';
+      btnShindoi.querySelector('.shindoi-emoji').textContent = emoji;
 
       const isShaking = shindoiCount > SHINDOI_SHAKE && shindoiCount < SHINDOI_EXPLODE;
       shindoiGaugeWrap.classList.toggle('shaking', isShaking);
@@ -907,6 +916,10 @@
       shindoiGaugeFill.style.transition = 'none';
       shindoiGaugeFill.style.width      = '100%';
       shindoiGaugeFill.style.background = '#FF3B30';
+
+      // リング内側も赤くフラッシュ
+      btnShindoi.style.background = 'rgba(255,59,48,0.3)';
+      btnShindoi.querySelector('.shindoi-emoji').textContent = '💥';
 
       // Stop shake, start explode bounce
       shindoiGaugeWrap.classList.remove('shaking');
