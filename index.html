@@ -637,12 +637,66 @@
       timerStatus.className = 'timer-status ' + cls;
     }
 
-    // ── History storage ─────────────────────────────────────────
+    // ── Persistence ─────────────────────────────────────────────
+    const STATE_KEY   = 'adhd-timer-state';
+    const HISTORY_KEY = 'adhd-history';
+
+    function todayStr() { return new Date().toLocaleDateString('sv'); } // YYYY-MM-DD
+
     function saveHistory() {
-      const today = new Date().toLocaleDateString('sv'); // YYYY-MM-DD
-      const hist = JSON.parse(localStorage.getItem('adhd-history') || '{}');
-      hist[today] = workTotal;
-      localStorage.setItem('adhd-history', JSON.stringify(hist));
+      const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
+      hist[todayStr()] = workTotal;
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+    }
+
+    function saveState() {
+      localStorage.setItem(STATE_KEY, JSON.stringify({
+        phase, elapsed, workTotal, isPaused,
+        savedAt: Date.now(),
+        savedDate: todayStr(),
+      }));
+    }
+
+    function loadState() {
+      const today = todayStr();
+      const hist  = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
+
+      let s;
+      try { s = JSON.parse(localStorage.getItem(STATE_KEY) || 'null'); } catch { s = null; }
+
+      // 別の日のデータなら workTotal だけ今日分を復元してスタンバイ
+      if (!s || s.savedDate !== today) {
+        workTotal = hist[today] || 0;
+        return;
+      }
+
+      workTotal = s.workTotal;
+      isPaused  = s.isPaused;
+      phase     = s.phase;
+
+      const passedSec = Math.floor((Date.now() - s.savedAt) / 1000);
+
+      if (s.phase === 'idling' && !s.isPaused) {
+        const newElapsed = s.elapsed + passedSec;
+        if (newElapsed >= IDLING_SEC) {
+          // アイドリングが閉じている間に終わった
+          workTotal += (IDLING_SEC - s.elapsed);
+          phase   = 'choice';
+          elapsed = IDLING_SEC;
+        } else {
+          elapsed    = newElapsed;
+          workTotal += passedSec;
+        }
+      } else if (s.phase === 'working' && !s.isPaused) {
+        elapsed    = s.elapsed + passedSec;
+        workTotal += passedSec;
+      } else if (s.phase === 'break' && !s.isPaused) {
+        elapsed = s.elapsed + passedSec;
+      } else {
+        elapsed = s.elapsed;
+      }
+
+      saveHistory(); // 復元した workTotal を今日の履歴にも反映
     }
 
     // ── Sound effects ───────────────────────────────────────────
@@ -713,6 +767,8 @@
       phaseStartTime = null;
       pausedAccum = 0;
       pauseStartTime = null;
+      saveState();
+      saveHistory();
       render();
       sessionStats.style.display = 'none';
     }
@@ -725,6 +781,7 @@
       if (phase === 'idling') {
         workTotal++;
         saveHistory();
+        saveState();
         if (elapsed >= IDLING_SEC) {
           showChoice();
           return;
@@ -732,8 +789,9 @@
       } else if (phase === 'working') {
         workTotal++;
         saveHistory();
+        saveState();
       } else if (phase === 'break') {
-        // 無制限休憩 - スキップボタンで終了
+        saveState();
       }
 
       render();
@@ -762,6 +820,7 @@
         clearTick();
         tickInterval = setInterval(tick, 1000);
       }
+      saveState();
       render();
     });
 
@@ -859,6 +918,30 @@
     requestAnimationFrame(animationLoop);
 
     // ── Init ───────────────────────────────────────────────────
+    loadState();
+
+    // タイマーが動いていたフェーズなら再開
+    if (phase === 'idling' && !isPaused) {
+      markPhaseStart();
+      // elapsed 分は既に経過済みとして phaseStartTime を補正
+      phaseStartTime -= elapsed * 1000;
+      tickInterval = setInterval(tick, 1000);
+    } else if (phase === 'working' && !isPaused) {
+      markPhaseStart();
+      phaseStartTime -= elapsed * 1000;
+      tickInterval = setInterval(tick, 1000);
+    } else if (phase === 'break' && !isPaused) {
+      markPhaseStart();
+      phaseStartTime -= elapsed * 1000;
+      tickInterval = setInterval(tick, 1000);
+    }
+
+    // ページ離脱時にも状態を保存
+    window.addEventListener('pagehide', saveState);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') saveState();
+    });
+
     render();
 
     // ── Service Worker ─────────────────────────────────────────
